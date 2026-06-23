@@ -78,6 +78,7 @@ def main() -> None:
     args = parser.parse_args()
 
     device = require_npu()
+    print(f"Using device: {device}")
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -96,6 +97,10 @@ def main() -> None:
         ),
     )
     model.to(device)
+    try:
+        print(f"NPU memory allocated after model.to: {torch.npu.memory_allocated() / 1024 / 1024:.1f} MiB")
+    except Exception as exc:
+        print(f"NPU memory allocated after model.to: unavailable ({exc})")
     model.train()
     model.print_trainable_parameters()
 
