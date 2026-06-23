@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -56,6 +57,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", choices=["npu", "cuda", "cpu"], default="npu")
     parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--hold-seconds", type=int, default=0, help="Keep process alive for npu-smi/nvidia-smi inspection.")
     args = parser.parse_args()
 
     device = get_training_device(args.device)
@@ -82,6 +84,15 @@ def main() -> None:
         if epoch == 1 or epoch % 5 == 0:
             acc = (logits.argmax(-1) == labels).float().mean()
             print({"epoch": epoch, "loss": float(loss.detach().cpu()), "acc": float(acc.cpu()), "device": str(device)})
+
+    if device.type == "npu":
+        torch.npu.synchronize()
+    elif device.type == "cuda":
+        torch.cuda.synchronize()
+
+    if args.hold_seconds > 0:
+        print(f"Holding process for {args.hold_seconds}s so system monitor can see device usage.")
+        time.sleep(args.hold_seconds)
 
 
 if __name__ == "__main__":

@@ -11,8 +11,9 @@ source scripts/common/ascend_env.sh
 
 VENV_DIR="${VENV_DIR:-.venv-graph}"
 STEPS="${STEPS:-200}"
+HOLD_SECONDS="${HOLD_SECONDS:-20}"
 
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
 
-python patterns/cuda_to_npu_minimal.py --device npu --steps "$STEPS"
+python patterns/cuda_to_npu_minimal.py --device npu --steps "$STEPS" --hold-seconds "$HOLD_SECONDS"
