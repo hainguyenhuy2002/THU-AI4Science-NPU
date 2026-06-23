@@ -8,6 +8,68 @@ This repo shows how to use Ascend 910B3 NPU resources for three common AI worklo
 
 The examples were designed for `cluster47`, where `npu-smi` and CANN are already available.
 
+## 0. Code Pattern: GPU to NPU
+
+Most PyTorch training code only needs a small device-layer change.
+
+CUDA GPU code usually looks like:
+
+```python
+import torch
+
+device = torch.device("cuda:0")
+model = model.to(device)
+x = x.to(device)
+y = y.to(device)
+```
+
+Ascend NPU code should look like:
+
+```python
+import torch
+import torch_npu
+
+device = torch.device("npu:0")
+model = model.to(device)
+x = x.to(device)
+y = y.to(device)
+```
+
+Environment variables are also different:
+
+```bash
+# CUDA GPU
+CUDA_VISIBLE_DEVICES=0
+nvidia-smi
+
+# Ascend NPU
+ASCEND_VISIBLE_DEVICES=0
+ASCEND_RT_VISIBLE_DEVICES=0
+npu-smi info
+```
+
+Copyable examples are in:
+
+```text
+patterns/device_utils.py
+patterns/cuda_to_npu_minimal.py
+patterns/graph_model_npu_template.py
+```
+
+Run the minimal NPU example:
+
+```bash
+cd /villa/rhh25/THU-AI4Science-NPU
+source .venv-graph/bin/activate
+ASCEND_VISIBLE_DEVICES=0 python patterns/cuda_to_npu_minimal.py --device npu --steps 20
+```
+
+Run the graph template:
+
+```bash
+ASCEND_VISIBLE_DEVICES=0 python patterns/graph_model_npu_template.py --device npu --epochs 20
+```
+
 ## Quick Check
 
 ```bash
