@@ -1,11 +1,15 @@
 __pycache__/
 *.py[cod]
 .venv*/
+.venv-finetune
+.venv-graph
 data/
 logs/
+logs_found_model.txt
 outputs/
 models/
 llama.cpp/
+llama.cpp
 *.gguf
 *.safetensors
 *.bin
