@@ -54,6 +54,8 @@ bash scripts/llm_deploy/setup_llama_cpp_cann.sh
 Example:
 
 ```bash
+export PATH="$HOME/.local/bin:$PATH"
+ollama serve > logs/ollama.log 2>&1 &
 ollama pull llama3.3:70b
 ollama list
 ```

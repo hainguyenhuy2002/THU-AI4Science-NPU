@@ -22,10 +22,14 @@ def main() -> None:
 
     result = subprocess.run(
         [ollama_bin, "show", args.model, "--modelfile"],
-        check=True,
         text=True,
         capture_output=True,
     )
+    if result.returncode != 0:
+        raise SystemExit(
+            result.stderr.strip()
+            or f"ollama show failed for {args.model}. Start Ollama with: {ollama_bin} serve"
+        )
     for line in result.stdout.splitlines():
         match = re.match(r"^FROM\s+(.+)$", line.strip())
         if not match:

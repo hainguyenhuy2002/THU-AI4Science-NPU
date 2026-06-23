@@ -20,6 +20,7 @@ THREADS="${THREADS:-$(nproc)}"
 N_GPU_LAYERS="${N_GPU_LAYERS:--1}"
 LOG_DIR="${LOG_DIR:-logs}"
 READY_TIMEOUT="${READY_TIMEOUT:-900}"
+OLLAMA_PORT="${OLLAMA_PORT:-11434}"
 
 mkdir -p "$LOG_DIR"
 
@@ -30,6 +31,22 @@ fi
 
 if [ -z "$OLLAMA_BIN" ] && [ -x "$HOME/.local/bin/ollama" ]; then
   OLLAMA_BIN="$HOME/.local/bin/ollama"
+fi
+if [ -z "$OLLAMA_BIN" ]; then
+  echo "[ERROR] Could not find ollama. Set OLLAMA_BIN=/path/to/ollama." >&2
+  exit 1
+fi
+
+if ! curl -sf "http://localhost:$OLLAMA_PORT/api/tags" >/dev/null 2>&1; then
+  echo "[INFO] Starting Ollama daemon on localhost:$OLLAMA_PORT"
+  OLLAMA_HOST="127.0.0.1:$OLLAMA_PORT" nohup "$OLLAMA_BIN" serve > "$LOG_DIR/ollama.log" 2>&1 &
+  echo "$!" > "$LOG_DIR/ollama.pid"
+  for _ in $(seq 1 60); do
+    if curl -sf "http://localhost:$OLLAMA_PORT/api/tags" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
 fi
 
 if [ -z "$MODEL_PATH" ]; then
