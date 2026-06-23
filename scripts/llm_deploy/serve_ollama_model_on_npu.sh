@@ -10,6 +10,7 @@ cd "$REPO_ROOT"
 source scripts/common/ascend_env.sh
 
 OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.3:70b}"
+OLLAMA_BIN="${OLLAMA_BIN:-$(command -v ollama 2>/dev/null || true)}"
 MODEL_ALIAS="${MODEL_ALIAS:-${OLLAMA_MODEL/:/-}-ascend}"
 MODEL_PATH="${MODEL_PATH:-}"
 LLAMA_SERVER_BIN="${LLAMA_SERVER_BIN:-llama.cpp/build/bin/llama-server}"
@@ -27,9 +28,13 @@ if [ ! -x "$LLAMA_SERVER_BIN" ]; then
   exit 1
 fi
 
+if [ -z "$OLLAMA_BIN" ] && [ -x "$HOME/.local/bin/ollama" ]; then
+  OLLAMA_BIN="$HOME/.local/bin/ollama"
+fi
+
 if [ -z "$MODEL_PATH" ]; then
   echo "[INFO] Finding Ollama GGUF blob for $OLLAMA_MODEL"
-  MODEL_PATH="$(python3 scripts/llm_deploy/find_ollama_gguf.py "$OLLAMA_MODEL")"
+  MODEL_PATH="$(OLLAMA_BIN="$OLLAMA_BIN" python3 scripts/llm_deploy/find_ollama_gguf.py "$OLLAMA_MODEL")"
 fi
 
 if [ ! -f "$MODEL_PATH" ]; then
