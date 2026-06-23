@@ -60,14 +60,13 @@ Run the minimal NPU example:
 
 ```bash
 cd /villa/rhh25/THU-AI4Science-NPU
-source .venv-graph/bin/activate
-ASCEND_VISIBLE_DEVICES=0 python patterns/cuda_to_npu_minimal.py --device npu --steps 20
+ASCEND_VISIBLE_DEVICES=0 STEPS=20 bash patterns/run_minimal_npu.sh
 ```
 
 Run the graph template:
 
 ```bash
-ASCEND_VISIBLE_DEVICES=0 python patterns/graph_model_npu_template.py --device npu --epochs 20
+ASCEND_VISIBLE_DEVICES=0 EPOCHS=20 bash patterns/run_graph_template_npu.sh
 ```
 
 ## Quick Check

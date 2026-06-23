@@ -24,3 +24,16 @@ x = x.to(device)
 ```
 
 Use `npu-smi info` instead of `nvidia-smi` to verify usage.
+
+Before running raw Python examples, load the CANN environment:
+
+```bash
+source scripts/common/ascend_env.sh
+```
+
+Or use the wrappers:
+
+```bash
+ASCEND_VISIBLE_DEVICES=0 bash patterns/run_minimal_npu.sh
+ASCEND_VISIBLE_DEVICES=0 bash patterns/run_graph_template_npu.sh
+```
