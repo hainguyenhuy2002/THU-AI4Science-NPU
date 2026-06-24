@@ -1,285 +1,231 @@
 # THU AI4Science NPU Examples
 
-This repo shows how to use Ascend 910B3 NPU resources for three common AI workloads:
+## 1. Ollama Deployment
 
-1. Deploying an LLM with an Ollama-pulled model
-2. Fine-tuning an LLM with LoRA
-3. Training a deep learning graph model
+Goal: use Ollama to manage/pull the model, then serve the GGUF model through `llama.cpp` compiled with Ascend CANN.
 
-The examples were designed for `cluster47`, where `npu-smi` and CANN are already available.
-
-## 0. Code Pattern: GPU to NPU
-
-Most PyTorch training code only needs a small device-layer change.
-
-CUDA GPU code usually looks like:
-
-```python
-import torch
-
-device = torch.device("cuda:0")
-model = model.to(device)
-x = x.to(device)
-y = y.to(device)
-```
-
-Ascend NPU code should look like:
-
-```python
-import torch
-import torch_npu
-
-device = torch.device("npu:0")
-model = model.to(device)
-x = x.to(device)
-y = y.to(device)
-```
-
-Environment variables are also different:
+Abstract implementation:
 
 ```bash
-# CUDA GPU
-CUDA_VISIBLE_DEVICES=0
-nvidia-smi
+# GPU deployment usually selects CUDA devices:
+export CUDA_VISIBLE_DEVICES=0
 
-# Ascend NPU
-ASCEND_VISIBLE_DEVICES=0
-ASCEND_RT_VISIBLE_DEVICES=0
-npu-smi info
+# NPU deployment selects Ascend devices:
+export ASCEND_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export ASCEND_RT_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+
+# GPU llama.cpp build:
+# cmake -S llama.cpp -B llama.cpp/build -DGGML_CUDA=on
+
+# NPU llama.cpp build:
+cmake -S llama.cpp -B llama.cpp/build -DGGML_CANN=on
+
+# GPU server normally uses a CUDA llama-server binary.
+# NPU server uses a CANN llama-server binary and the same GGUF model file.
+llama.cpp/build/bin/llama-server \
+  --host 0.0.0.0 \
+  --port 18080 \
+  --model /path/to/model.gguf \
+  --alias model-ascend \
+  --n-gpu-layers -1
 ```
 
-Copyable examples are in:
+Diff / comparative logic:
+
+```diff
+- export CUDA_VISIBLE_DEVICES=0
+- cmake -S llama.cpp -B llama.cpp/build -DGGML_CUDA=on
+- nvidia-smi
++ export ASCEND_VISIBLE_DEVICES=0
++ export ASCEND_RT_VISIBLE_DEVICES=0
++ cmake -S llama.cpp -B llama.cpp/build -DGGML_CANN=on
++ npu-smi info
+```
+
+Code:
 
 ```text
-patterns/device_utils.py
-patterns/cuda_to_npu_minimal.py
-patterns/graph_model_npu_template.py
+scripts/llm_deploy/abstract_ollama_npu_deploy.sh
+scripts/llm_deploy/setup_llama_cpp_cann.sh
+scripts/llm_deploy/serve_ollama_model_on_npu.sh
+scripts/llm_deploy/test_llm_api.sh
 ```
 
-Run the minimal NPU example:
-
-```bash
-cd /villa/rhh25/THU-AI4Science-NPU
-ASCEND_VISIBLE_DEVICES=0 STEPS=20 bash patterns/run_minimal_npu.sh
-```
-
-Run the graph template:
-
-```bash
-ASCEND_VISIBLE_DEVICES=0 EPOCHS=20 bash patterns/run_graph_template_npu.sh
-```
-
-## Quick Check
-
-```bash
-npu-smi info
-```
-
-Expected hardware:
-
-```text
-Name: 910B3
-HBM-Usage(MB): ... / 65536
-```
-
-All scripts load the Ascend environment from `/usr/local/Ascend/.../set_env.sh` and use:
-
-```bash
-ASCEND_VISIBLE_DEVICES=0
-ASCEND_RT_VISIBLE_DEVICES=0
-```
-
-Override those variables to select another NPU.
-
-## 1. Deploying LLM with Ollama
-
-Ollama is used to pull/manage the model. On Ascend NPU, the actual NPU serving path uses `llama.cpp` built with CANN, because standard Ollama may run on CPU only.
-
-Flow:
-
-```text
-ollama pull -> locate Ollama GGUF blob -> llama.cpp CANN server -> OpenAI-compatible API
-```
-
-### Build llama.cpp with CANN
-
-Run once:
+Sample command:
 
 ```bash
 cd /villa/rhh25/THU-AI4Science-NPU
 bash scripts/llm_deploy/setup_llama_cpp_cann.sh
-```
 
-### Pull a Model with Ollama
-
-Example:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-ollama serve > logs/ollama.log 2>&1 &
-ollama pull llama3.3:70b
-ollama list
-```
-
-Find the GGUF blob path:
-
-```bash
-python3 scripts/llm_deploy/find_ollama_gguf.py llama3.3:70b
-```
-
-### Serve on NPU
-
-```bash
 ASCEND_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
 OLLAMA_MODEL=llama3.3:70b \
 MODEL_ALIAS=llama3.3-70b-ascend \
+LLAMA_CPP_PORT=18080 \
 LLAMA_SERVER_EXTRA_ARGS="--no-mmap" \
 bash scripts/llm_deploy/serve_ollama_model_on_npu.sh
 ```
 
-For a known local model file:
+Verify:
 
 ```bash
-MODEL_PATH=/villa/rhh25/.ollama/models/blobs/sha256-... \
-MODEL_ALIAS=my-model-ascend \
-bash scripts/llm_deploy/serve_ollama_model_on_npu.sh
-```
-
-### Test the LLM API
-
-```bash
-MODEL_ALIAS=llama3.3-70b-ascend \
-bash scripts/llm_deploy/test_llm_api.sh
-```
-
-### Verify NPU Usage
-
-```bash
+curl http://localhost:18080/health
 npu-smi info
 ```
 
-Look for:
+Expected NPU evidence: `llama-server` appears in the NPU process table and HBM usage increases.
 
-- `llama-server` in the process table
-- increased `HBM-Usage(MB)`
-- nonzero `AICore(%)` while generating
+## 2. Finetuning
 
-## 2. Fine-Tuning LLM on NPU
+Goal: finetune a causal language model with LoRA on Ascend NPU using PyTorch + `torch-npu`.
 
-This example fine-tunes `Qwen/Qwen2.5-0.5B-Instruct` with LoRA on a real medical instruction dataset:
+Abstract implementation:
 
-```text
-medalpaca/medical_meadow_medical_flashcards
+```python
+import torch
+
+# GPU implementation:
+# device = torch.device("cuda:0")
+
+# NPU implementation:
+import torch_npu
+device = torch.device("npu:0")
+
+model = model.to(device)
+batch = {key: value.to(device) for key, value in batch.items()}
+
+outputs = model(**batch)
+loss = outputs.loss
+loss.backward()
+optimizer.step()
 ```
 
-The default job uses 1000 samples and 800 steps. On `cluster47`, this ran on NPU 0 and completed in a few minutes for the small Qwen model.
+Diff / comparative logic:
 
-### Create Fine-Tuning Environment
+```diff
+  import torch
++ import torch_npu
+
+- device = torch.device("cuda:0")
++ device = torch.device("npu:0")
+
+- CUDA_VISIBLE_DEVICES=0
+- nvidia-smi
++ ASCEND_VISIBLE_DEVICES=0
++ ASCEND_RT_VISIBLE_DEVICES=0
++ npu-smi info
+```
+
+Code:
+
+```text
+scripts/finetune/abstract_finetune_npu.py
+scripts/finetune/setup_env.sh
+scripts/finetune/prepare_dataset.py
+scripts/finetune/train_lora_npu.py
+scripts/finetune/run_lora_finetune.sh
+```
+
+Sample command:
 
 ```bash
 cd /villa/rhh25/THU-AI4Science-NPU
 bash scripts/finetune/setup_env.sh
-```
 
-The script installs:
-
-- PyTorch CPU wheel
-- `torch-npu`
-- Transformers
-- Datasets
-- PEFT
-- CANN Python helper dependencies
-
-If direct Hugging Face access is blocked, the scripts default to:
-
-```bash
-HF_ENDPOINT=https://hf-mirror.com
-```
-
-### Run Fine-Tuning
-
-Direct run:
-
-```bash
 ASCEND_VISIBLE_DEVICES=0 \
 MAX_SAMPLES=1000 \
 MAX_STEPS=800 \
 bash scripts/finetune/run_lora_finetune.sh
 ```
 
-Run inside `byobu`:
+Quick smoke test:
 
 ```bash
-byobu new-session -d -s npu-finetune \
-  'cd /villa/rhh25/THU-AI4Science-NPU && ASCEND_VISIBLE_DEVICES=0 MAX_SAMPLES=1000 MAX_STEPS=800 bash scripts/finetune/run_lora_finetune.sh 2>&1 | tee logs/finetune.log'
+ASCEND_VISIBLE_DEVICES=0 \
+MAX_SAMPLES=50 \
+MAX_STEPS=40 \
+OUTPUT_DIR=outputs/finetune-smoke \
+bash scripts/finetune/run_lora_finetune.sh
 ```
 
-Attach:
-
-```bash
-byobu attach -t npu-finetune
-```
-
-Detach without stopping:
-
-```text
-Ctrl-a d
-```
-
-### Outputs
-
-```text
-data/medical_flashcards_lora.jsonl
-outputs/qwen2.5-0.5b-medical-lora/
-outputs/qwen2.5-0.5b-medical-lora/training_metrics.jsonl
-logs/finetune.log
-```
-
-### Verify NPU Usage
+Verify:
 
 ```bash
 npu-smi info
-```
-
-Look for:
-
-- `python` in the NPU process table
-- `HBM-Usage(MB)` increasing on NPU 0
-- `AICore(%)` rising during active steps
-
-Check training loss:
-
-```bash
 tail -f outputs/qwen2.5-0.5b-medical-lora/training_metrics.jsonl
 ```
 
-## 3. Training Deep Learning Graph Models on NPU
+Expected NPU evidence: `python` appears in the NPU process table and the training log prints `Using device: npu:0`.
 
-This example trains a two-layer Graph Convolutional Network using only PyTorch tensor operations. It avoids extra graph libraries so it can run on a fresh Ascend environment.
+## 3. Graph Model Training
 
-The script creates a synthetic citation-like graph:
+Goal: train a graph neural network on Ascend NPU. The sample uses a simple dense GCN layer so the NPU logic is visible without extra graph libraries.
 
-- nodes have class-dependent feature vectors
-- edges connect mostly same-class nodes plus some noisy cross-class links
-- the GCN learns node classification
+Abstract implementation:
 
-### Create Graph Training Environment
+```python
+import torch
+import torch.nn as nn
+
+# GPU implementation:
+# device = torch.device("cuda:0")
+
+# NPU implementation:
+import torch_npu
+device = torch.device("npu:0")
+
+x = x.to(device)
+adj_norm = adj_norm.to(device)
+labels = labels.to(device)
+model = GCN(...).to(device)
+
+logits = model(x, adj_norm)
+loss = criterion(logits, labels)
+loss.backward()
+optimizer.step()
+```
+
+Diff / comparative logic:
+
+```diff
+  import torch
++ import torch_npu
+
+- device = torch.device("cuda:0")
++ device = torch.device("npu:0")
+
+- x = x.cuda()
+- edge_index = edge_index.cuda()
+- model = model.cuda()
++ x = x.to(device)
++ adj_norm = adj_norm.to(device)
++ model = model.to(device)
+
+- nvidia-smi
++ npu-smi info
+```
+
+Code:
+
+```text
+scripts/graph/abstract_graph_npu.py
+scripts/graph/setup_env.sh
+scripts/graph/train_gcn_npu.py
+scripts/graph/run_gcn_training.sh
+```
+
+Sample command:
 
 ```bash
 cd /villa/rhh25/THU-AI4Science-NPU
 bash scripts/graph/setup_env.sh
-```
 
-### Run GCN Training on NPU
-
-```bash
 ASCEND_VISIBLE_DEVICES=0 \
 EPOCHS=200 \
 NODES=2500 \
 bash scripts/graph/run_gcn_training.sh
 ```
 
-For a quick smoke test:
+Quick smoke test:
 
 ```bash
 ASCEND_VISIBLE_DEVICES=0 \
@@ -288,63 +234,11 @@ NODES=1200 \
 bash scripts/graph/run_gcn_training.sh
 ```
 
-### Outputs
-
-```text
-outputs/graph/gcn_metrics.jsonl
-logs/graph_npu_before.log
-logs/graph_npu_after.log
-```
-
-Inspect metrics:
-
-```bash
-tail outputs/graph/gcn_metrics.jsonl
-```
-
-### Verify NPU Usage
-
-Run in another terminal while training:
+Verify:
 
 ```bash
 npu-smi info
+tail outputs/graph/gcn_metrics.jsonl
 ```
 
-Look for:
-
-- `python` in the NPU process table
-- increased `HBM-Usage(MB)`
-- nonzero `AICore(%)`
-
-## Common Troubleshooting
-
-### `torch_npu` is not available
-
-Check:
-
-```bash
-source /usr/local/Ascend/ascend-toolkit/set_env.sh
-python -c "import torch, torch_npu; print(torch.npu.is_available())"
-```
-
-If this fails, verify that the `torch-npu` version matches the CANN version.
-
-### HugePages is `0 / 0`
-
-That is normal for these examples. It means hugepage-backed memory is not configured or not used by this runtime path.
-
-### HBM is nonzero but AICore is 0
-
-The process may be idle or between compute kernels. Send a request or watch during training steps:
-
-```bash
-watch -n 1 npu-smi info
-```
-
-### Stop Processes
-
-```bash
-pkill -f llama-server
-pkill -f train_lora_npu.py
-pkill -f train_gcn_npu.py
-```
+Expected NPU evidence: metrics include `"device": "npu:0"` and `python` appears in the NPU process table during training.
