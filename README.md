@@ -1,6 +1,6 @@
-# THU AI4Science NPU Examples
+# THU AI4Science NPU Instruction
 
-## 1. Ollama Deployment
+## 1. LLM Deployment
 
 Goal: use Ollama to manage/pull the model, then serve the GGUF model through `llama.cpp` compiled with Ascend CANN.
 
