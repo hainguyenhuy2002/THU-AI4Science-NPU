@@ -42,19 +42,10 @@ Diff / comparative logic:
 + npu-smi info
 ```
 
-Code:
-
-```text
-scripts/llm_deploy/abstract_ollama_npu_deploy.sh
-scripts/llm_deploy/setup_llama_cpp_cann.sh
-scripts/llm_deploy/serve_ollama_model_on_npu.sh
-scripts/llm_deploy/test_llm_api.sh
-```
 
 Sample command:
 
 ```bash
-cd /villa/rhh25/THU-AI4Science-NPU
 bash scripts/llm_deploy/setup_llama_cpp_cann.sh
 
 ASCEND_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 \
@@ -115,20 +106,10 @@ Diff / comparative logic:
 + npu-smi info
 ```
 
-Code:
-
-```text
-scripts/finetune/abstract_finetune_npu.py
-scripts/finetune/setup_env.sh
-scripts/finetune/prepare_dataset.py
-scripts/finetune/train_lora_npu.py
-scripts/finetune/run_lora_finetune.sh
-```
 
 Sample command:
 
 ```bash
-cd /villa/rhh25/THU-AI4Science-NPU
 bash scripts/finetune/setup_env.sh
 
 ASCEND_VISIBLE_DEVICES=0 \
@@ -202,15 +183,6 @@ Diff / comparative logic:
 
 - nvidia-smi
 + npu-smi info
-```
-
-Code:
-
-```text
-scripts/graph/abstract_graph_npu.py
-scripts/graph/setup_env.sh
-scripts/graph/train_gcn_npu.py
-scripts/graph/run_gcn_training.sh
 ```
 
 Sample command:
