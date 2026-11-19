@@ -1,4 +1,4 @@
-# THU AI4Science NPU Instruction
+# THU Media Lab NPU Instruction
 
 Run from the repository root on a server with Ascend CANN and Ollama installed.
 All examples run on one host. A multi-NPU run uses multiple cards on that host.
