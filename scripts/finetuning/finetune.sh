@@ -7,7 +7,7 @@ source exp_setup/ascend_env.sh
 
 mkdir -p outputs
 output_dir="${OUTPUT_DIR:-$(mktemp -d "$PWD/outputs/finetuning.XXXXXX")}"
-exec "${PYTHON_BIN:-.venv/bin/python}" -u -m scripts.finetuning.finetune \
+run_npu_python scripts.finetuning.finetune \
   --model "${BASE_MODEL:-Qwen/Qwen2.5-0.5B-Instruct}" \
   --data "${DATA_PATH:-exp_setup/finetuning.jsonl}" --output-dir "$output_dir" \
   --max-steps "${MAX_STEPS:-2}" "$@"

@@ -7,6 +7,6 @@ source exp_setup/ascend_env.sh
 
 mkdir -p outputs
 output_dir="${OUTPUT_DIR:-$(mktemp -d "$PWD/outputs/training.XXXXXX")}"
-exec "${PYTHON_BIN:-.venv/bin/python}" -u -m scripts.training.train \
+run_npu_python scripts.training.train \
   --epochs "${EPOCHS:-20}" --nodes "${NODES:-1200}" \
   --output "$output_dir/gcn_metrics.jsonl" "$@"

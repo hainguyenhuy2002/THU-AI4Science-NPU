@@ -25,7 +25,13 @@ if [[ ! -f "$model_path" ]]; then
 fi
 
 read -r -a extra_args <<< "${LLAMA_SERVER_EXTRA_ARGS:---parallel 1 -lv 4}"
+split_args=(--split-mode none)
+if (( NPU_COUNT > 1 )); then
+  shares=()
+  for ((index = 0; index < NPU_COUNT; index++)); do shares+=(1); done
+  split_args=(--split-mode layer --tensor-split "$(IFS=,; echo "${shares[*]}")")
+fi
 exec "$server" --host 127.0.0.1 --port "${LLAMA_CPP_PORT:-18080}" \
   --model "$model_path" --alias "${MODEL_ALIAS:-local-llm}" \
   --ctx-size "${CTX_SIZE:-4096}" --threads "${THREADS:-8}" \
-  --n-gpu-layers "${N_GPU_LAYERS:-all}" "${extra_args[@]}"
+  --n-gpu-layers "${N_GPU_LAYERS:-all}" "${split_args[@]}" "${extra_args[@]}"

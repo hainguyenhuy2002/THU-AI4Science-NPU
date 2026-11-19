@@ -10,21 +10,15 @@ import os
 from pathlib import Path
 
 import torch
+import torch.distributed as dist
 from peft import LoraConfig, get_peft_model
-from torch.utils.data import DataLoader
+from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, LlamaConfig, get_cosine_schedule_with_warmup
 
-
+from exp_setup.distributed import npu_run
 from exp_setup.finetune_data import JsonlSftDataset, collate
-
-
-def require_npu() -> torch.device:
-    import torch_npu  # noqa: F401
-
-    if not torch.npu.is_available():
-        raise RuntimeError("Ascend NPU is not available. Check CANN, torch-npu, and ASCEND_VISIBLE_DEVICES.")
-    return torch.device("npu:0")
 
 
 def load_model(model_path: str, config, gguf_path: Path | None):
@@ -76,8 +70,11 @@ def main() -> None:
     if min(args.max_steps, args.grad_accum, args.cutoff_len, args.batch_size, args.save_steps) < 1:
         parser.error("Steps, gradient accumulation, cutoff length, and batch size must be positive")
 
-    device = require_npu()
-    print(f"Using device: {device}")
+    with npu_run() as (device, rank, world_size):
+        finetune(args, device, rank, world_size)
+
+
+def finetune(args, device, rank, world_size):
     config = AutoConfig.from_pretrained(args.model, trust_remote_code=True)
     tokenizer_options = {"fix_mistral_regex": True} if config.model_type == "mistral" else {}
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True, **tokenizer_options)
@@ -102,28 +99,36 @@ def main() -> None:
             target_modules="all-linear" if args.target_modules == ["all-linear"] else args.target_modules,
         ),
     )
-    model.to(device)
-    try:
-        print(f"NPU memory allocated after model.to: {torch.npu.memory_allocated() / 1024 / 1024:.1f} MiB")
-    except Exception as exc:
-        print(f"NPU memory allocated after model.to: unavailable ({exc})")
+    adapter = model.to(device)
+    if world_size > 1:
+        model = DistributedDataParallel(adapter, device_ids=[device.index], broadcast_buffers=False)
     model.train()
-    model.print_trainable_parameters()
+    if rank == 0:
+        adapter.print_trainable_parameters()
 
-    loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, collate_fn=lambda b: collate(b, tokenizer.pad_token_id))
+    sampler = DistributedSampler(dataset) if world_size > 1 else None
+    loader = DataLoader(
+        dataset, batch_size=args.batch_size, shuffle=sampler is None, sampler=sampler,
+        collate_fn=lambda batch: collate(batch, tokenizer.pad_token_id),
+    )
     optimizer = torch.optim.AdamW((p for p in model.parameters() if p.requires_grad), lr=args.learning_rate)
     updates = math.ceil(args.max_steps / args.grad_accum)
     scheduler = get_cosine_schedule_with_warmup(optimizer, int(updates * 0.03), updates)
 
     out_dir = Path(args.output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
     metrics = out_dir / "training_metrics.jsonl"
+    if rank == 0:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        metrics.write_text("", encoding="utf-8")
     step = 0
+    epoch = 0
     optimizer_steps = 0
     optimizer.zero_grad(set_to_none=True)
 
-    progress = tqdm(total=args.max_steps, desc="LoRA fine-tuning")
+    progress = tqdm(total=args.max_steps, desc="LoRA fine-tuning", disable=rank != 0)
     while step < args.max_steps:
+        if sampler is not None:
+            sampler.set_epoch(epoch)
         for batch in loader:
             batch = {key: value.to(device) for key, value in batch.items()}
             loss = model(**batch).loss
@@ -138,24 +143,30 @@ def main() -> None:
                 optimizer_steps += 1
             progress.update(1)
             if step == 1 or step % 10 == 0 or step == args.max_steps:
-                raw_loss = float(loss.detach().cpu())
+                mean_loss = loss.detach().float() / world_size
+                if world_size > 1:
+                    dist.all_reduce(mean_loss)
+                raw_loss = mean_loss.item()
                 if not math.isfinite(raw_loss):
                     raise RuntimeError(f"Non-finite loss at step {step}: {raw_loss}")
-                with metrics.open("a", encoding="utf-8") as stream:
-                    row = {"step": step, "optimizer_steps": optimizer_steps,
-                           "loss": raw_loss, "device": str(loss.device)}
-                    stream.write(json.dumps(row) + "\n")
+                if rank == 0:
+                    with metrics.open("a", encoding="utf-8") as stream:
+                        row = {"step": step, "optimizer_steps": optimizer_steps,
+                               "loss": raw_loss, "device": str(loss.device), "world_size": world_size}
+                        stream.write(json.dumps(row) + "\n")
                 progress.set_postfix(loss=f"{raw_loss:.4f}")
-            if step % args.save_steps == 0:
+            if rank == 0 and step % args.save_steps == 0:
                 ckpt = out_dir / f"checkpoint-{step}"
-                model.save_pretrained(ckpt)
+                adapter.save_pretrained(ckpt)
                 tokenizer.save_pretrained(ckpt)
             if step >= args.max_steps:
                 break
+        epoch += 1
     progress.close()
-    model.save_pretrained(out_dir)
-    tokenizer.save_pretrained(out_dir)
-    print(f"Saved LoRA adapter to {out_dir}")
+    if rank == 0:
+        adapter.save_pretrained(out_dir)
+        tokenizer.save_pretrained(out_dir)
+        print(f"Saved LoRA adapter to {out_dir}")
 
 
 if __name__ == "__main__":
