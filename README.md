@@ -44,7 +44,7 @@ source exp_setup/ascend_env.sh
 
 ## 1. LLM Deployment
 
-### Run
+### Sample Run
 
 If Ollama is stopped, start its daemon in a separate terminal.
 
@@ -78,7 +78,7 @@ Check for the server PID and a nonzero CANN model buffer on each selected
 card. The example uses the Q8_0 Ollama tag in `.env`.
 [CANN backend guide](https://github.com/ggml-org/llama.cpp/blob/master/docs/backend/CANN.md)
 
-### NPU code
+### Sample code
 
 Both variants get the model file from the local Ollama daemon.
 
@@ -113,7 +113,7 @@ source exp_setup/ascend_env.sh
 
 ## 2. Fine-tuning
 
-### Run
+### Sample run  
 
 `BASE_MODEL` selects a Transformers checkpoint or a local checkpoint directory.
 The example fine-tunes Qwen 2.5 0.5B Instruct using LoRA. Each DDP worker keeps a
@@ -135,7 +135,7 @@ The launcher prints the device and PID of each worker. Check those PIDs in
 `npu-smi info` during training. Look for two optimizer steps and a `world_size`
 of 1 or 2 in the saved `training_metrics.jsonl`. Rank 0 saves the adapter.
 
-### NPU code
+### Sample code
 
 Start with a Transformers `model`. The single-card example takes a tokenized
 `batch` with `labels`. The multi-card example takes a `dataset` of tokenized
@@ -193,7 +193,7 @@ dist.destroy_process_group()
 
 ## 3. Training
 
-### Run
+### Sample run
 
 The examples train a graph convolutional network on a synthetic graph. With
 DDP, each worker uses the same graph and computes loss for a different subset
@@ -215,7 +215,7 @@ Match the worker PIDs to `npu-smi info`. The final row in `gcn_metrics.jsonl`
 should show epoch 20 and a `world_size` of 1 or 2. The output path appears at
 the end of each run.
 
-### NPU code
+### Sample code
 
 #### Single NPU
 
