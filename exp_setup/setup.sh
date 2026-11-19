@@ -26,16 +26,17 @@ case "${1:-}" in
     "${LLAMA_SERVER_BIN:-llama.cpp/build/bin/llama-server}" --list-devices
     ;;
   python)
-    if [[ -z "${PYTHON_BIN:-}" ]]; then
-      if [[ ! -x .venv/bin/python ]]; then python3 -m venv .venv; fi
-      .venv/bin/python -m pip install 'numpy<2'
-      .venv/bin/python -m pip install "torch==${TORCH_VERSION:-2.5.1}" \
+    python="${PYTHON_BIN:-.venv/bin/python}"
+    if [[ -z "${PYTHON_BIN:-}" ]] && ! "$python" -c 'import torch_npu, transformers, peft' >/dev/null 2>&1; then
+      if [[ ! -x "$python" ]]; then python3 -m venv .venv; fi
+      "$python" -m pip install 'numpy<2'
+      "$python" -m pip install "torch==${TORCH_VERSION:-2.5.1}" \
         --index-url https://download.pytorch.org/whl/cpu
-      .venv/bin/python -m pip install "torch-npu==${TORCH_NPU_VERSION:-2.5.1.post1}" \
+      "$python" -m pip install "torch-npu==${TORCH_NPU_VERSION:-2.5.1.post1}" \
         --extra-index-url "${ASCEND_PYPI_INDEX:-https://mirrors.huaweicloud.com/ascend/repos/pypi}"
-      .venv/bin/python -m pip install -r exp_setup/requirements.txt
+      "$python" -m pip install -r exp_setup/requirements.txt
     fi
-    "${PYTHON_BIN:-.venv/bin/python}" - <<'PY'
+    "$python" - <<'PY'
 import peft
 import torch
 import torch_npu
