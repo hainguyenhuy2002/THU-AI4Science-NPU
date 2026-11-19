@@ -108,6 +108,11 @@ def main() -> None:
     parser.add_argument("--model", default="Qwen/Qwen2.5-0.5B-Instruct")
     parser.add_argument("--gguf-file", type=Path, help="Dequantize this local GGUF using --model for config and tokenizer")
     parser.add_argument("--system-prompt", default=SYSTEM_PROMPT)
+    parser.add_argument(
+        "--target-modules", nargs="+",
+        default=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        help="Module names for LoRA, or all-linear to select supported linear layers automatically",
+    )
     parser.add_argument("--data", default="data/medical_flashcards_lora.jsonl")
     parser.add_argument("--output-dir", default="outputs/qwen2.5-0.5b-medical-lora")
     parser.add_argument("--max-steps", type=int, default=800)
@@ -143,7 +148,7 @@ def main() -> None:
             lora_dropout=0.05,
             bias="none",
             task_type="CAUSAL_LM",
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            target_modules="all-linear" if args.target_modules == ["all-linear"] else args.target_modules,
         ),
     )
     model.to(device)
